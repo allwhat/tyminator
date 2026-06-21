@@ -93,7 +93,7 @@ jobs:
           netrc.chmod(0o600)
           PY
           python -m venv venv/packagemaze-installation
-          venv/packagemaze-installation/bin/pip install --no-deps --index-url "$PACKAGE_MAZE_PYPI_FEED_URL" "${release_name}==${release_version}"
+          venv/packagemaze-installation/bin/pip install --no-deps --index-url "${PACKAGE_MAZE_PYPI_FEED_URL%/}/simple/" "${release_name}==${release_version}"
         env:
           PACKAGE_MAZE_INSTALL_TOKEN: ${{ steps.packagemaze-install-token.outputs.token }}
 
