@@ -55,7 +55,7 @@ jobs:
         run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_FEED" --purpose publish --package "$PACKAGE_NAME" --format github-output
 
       - name: Publish package to PackageMaze
-        run: python -m twine upload dist/*
+        run: python -m twine upload dist/*.whl
         env:
           TWINE_NON_INTERACTIVE: "1"
           TWINE_PASSWORD: ${{ steps.packagemaze-publish-token.outputs.token }}
