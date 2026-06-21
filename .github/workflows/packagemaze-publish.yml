@@ -25,20 +25,11 @@ jobs:
 
       - uses: packagemaze/setup-maze@v0.0.1
 
-      - id: packagemaze-install-token
-        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_FEED" --purpose install --format github-output
-
       - uses: actions/setup-python@v6
         with:
           python-version: "3.9"
 
-      - name: Configure PackageMaze PyPI install
-        run: |
-          python -m pip config set global.index-url "https://__token__:${PACKAGE_MAZE_TOKEN}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/"
-        env:
-          PACKAGE_MAZE_TOKEN: ${{ steps.packagemaze-install-token.outputs.token }}
-
-      - name: Install build tools through PackageMaze
+      - name: Install build tools
         run: python -m pip install build twine
 
       - name: Set smoke package version
@@ -71,8 +62,15 @@ jobs:
           TWINE_REPOSITORY_URL: ${{ env.PACKAGE_MAZE_LEGACY_URL }}
           TWINE_USERNAME: __token__
 
+      - id: packagemaze-install-token
+        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_FEED" --purpose install --format github-output
+
       - name: Install published package from PackageMaze
         run: |
           python -m venv /tmp/packagemaze-tyminator-consumer
-          /tmp/packagemaze-tyminator-consumer/bin/python -m pip install "${PACKAGE_NAME}==${PACKAGE_VERSION}"
+          /tmp/packagemaze-tyminator-consumer/bin/python -m pip install \
+            --index-url "https://__token__:${PACKAGE_MAZE_TOKEN}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/" \
+            "${PACKAGE_NAME}==${PACKAGE_VERSION}"
           /tmp/packagemaze-tyminator-consumer/bin/python -c "import tyminator; print('installed tyminator')"
+        env:
+          PACKAGE_MAZE_TOKEN: ${{ steps.packagemaze-install-token.outputs.token }}
