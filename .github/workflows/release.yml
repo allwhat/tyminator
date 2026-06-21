@@ -15,6 +15,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      attestations: write
     env:
       PACKAGE_MAZE_PYPI_FEED: ${{ vars.PACKAGE_MAZE_PYPI_FEED }}
       PACKAGE_MAZE_PYPI_FEED_URL: ${{ vars.PACKAGE_MAZE_PYPI_FEED_URL }}
@@ -58,6 +59,11 @@ jobs:
       - name: Build distributions
         run: poetry build -f wheel
 
+      - name: Generate wheel artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/*.whl
+
       - name: Authorize PackageMaze publish
         id: packagemaze-publish-token
         run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_PYPI_FEED" --purpose publish --package "$release_name" --format github-output
@@ -96,6 +102,3 @@ jobs:
           venv/packagemaze-installation/bin/pip install --no-deps --index-url "${PACKAGE_MAZE_PYPI_FEED_URL%/}/simple/" "${release_name}==${release_version}"
         env:
           PACKAGE_MAZE_INSTALL_TOKEN: ${{ steps.packagemaze-install-token.outputs.token }}
-
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
