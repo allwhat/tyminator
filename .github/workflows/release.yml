@@ -15,6 +15,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    env:
+      PACKAGE_MAZE_PYPI_FEED: ${{ vars.PACKAGE_MAZE_PYPI_FEED }}
+      PACKAGE_MAZE_PYPI_FEED_URL: ${{ vars.PACKAGE_MAZE_PYPI_FEED_URL }}
     steps:
       - uses: actions/checkout@v6
 
@@ -25,6 +28,26 @@ jobs:
       - name: Install Poetry
         run: python -m pip install --upgrade poetry
 
+      - name: Check PackageMaze publish configuration
+        run: |
+          if [ -z "$PACKAGE_MAZE_PYPI_FEED" ] || [ -z "$PACKAGE_MAZE_PYPI_FEED_URL" ]; then
+            printf '%s\n' 'Set PACKAGE_MAZE_PYPI_FEED and PACKAGE_MAZE_PYPI_FEED_URL repository variables before running PackageMaze publish.' >&2
+            exit 1
+          fi
+          case "$PACKAGE_MAZE_PYPI_FEED_URL" in
+            https://*) ;;
+            *)
+              printf '%s\n' 'PACKAGE_MAZE_PYPI_FEED_URL must be an https PackageMaze PyPI Feed Base URL.' >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: packagemaze/setup-maze@v0.0.1
+
+      - name: Extract name from poetry
+        run: |
+          echo release_name=$(poetry version | grep -o '^[^ ]*') >> $GITHUB_ENV
+
       - name: Extract version from poetry
         run: |
           echo release_version=$(poetry version -s) >> $GITHUB_ENV
@@ -34,6 +57,45 @@ jobs:
 
       - name: Build sdist
         run: poetry build -f sdist
+
+      - name: Authorize PackageMaze publish
+        id: packagemaze-publish-token
+        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_PYPI_FEED" --purpose publish --package "$release_name" --format github-output
+
+      - name: Publish package to PackageMaze
+        run: |
+          poetry config repositories.packagemaze "${PACKAGE_MAZE_PYPI_FEED_URL%/}/legacy/"
+          poetry publish --repository packagemaze
+        env:
+          POETRY_HTTP_BASIC_PACKAGEMAZE_USERNAME: __token__
+          POETRY_HTTP_BASIC_PACKAGEMAZE_PASSWORD: ${{ steps.packagemaze-publish-token.outputs.token }}
+
+      - name: Authorize PackageMaze install verification
+        id: packagemaze-install-token
+        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_PYPI_FEED" --purpose install --format github-output
+
+      - name: Verify PackageMaze package installs
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          host = urlsplit(os.environ["PACKAGE_MAZE_PYPI_FEED_URL"]).hostname
+          if not host:
+              raise SystemExit("PACKAGE_MAZE_PYPI_FEED_URL must include a host")
+
+          netrc = Path.home() / ".netrc"
+          netrc.write_text(
+              f"machine {host} login __token__ password {os.environ['PACKAGE_MAZE_INSTALL_TOKEN']}\n",
+              encoding="utf-8",
+          )
+          netrc.chmod(0o600)
+          PY
+          python -m venv venv/packagemaze-installation
+          venv/packagemaze-installation/bin/pip install --no-deps --index-url "$PACKAGE_MAZE_PYPI_FEED_URL" "${release_name}==${release_version}"
+        env:
+          PACKAGE_MAZE_INSTALL_TOKEN: ${{ steps.packagemaze-install-token.outputs.token }}
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
