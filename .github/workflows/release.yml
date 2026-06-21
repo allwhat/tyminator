@@ -10,7 +10,7 @@ on:
 
 jobs:
   publish:
-    runs-on: [self-hosted, Linux, ARM64, packagemaze-linux-local]
+    runs-on: ubuntu-latest
     name: Builds and publishes release.
     permissions:
       id-token: write
