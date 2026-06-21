@@ -1,0 +1,91 @@
+# Copyright 2023-2025 The Milton Hirsch Institute, B.V.
+# SPDX-License-Identifier: Apache-2.0
+
+name: PackageMaze PyPI smoke
+
+on:
+  push:
+    tags:
+      - 'package-maze-smoke-*'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+    - uses: actions/checkout@v7.0.0
+
+    - uses: packagemaze/setup-maze@v0.0.1
+
+    - uses: actions/setup-python@v6.2.0
+      with:
+        python-version: "3.10"
+        architecture: x64
+
+    - id: packagemaze-install-token
+      name: Get PackageMaze install token
+      run: maze auth exchange-oidc --feed packagemaze/pypi-smoke-test --purpose install --format github-output
+
+    - name: Install build tools from PackageMaze
+      run: python -m pip install poetry==1.8.5 twine==6.1.0
+      env:
+        PIP_INDEX_URL: https://__token__:${{ steps.packagemaze-install-token.outputs.token }}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/
+
+    - name: Set smoke package version
+      run: |
+        version="1.0.1.post${GITHUB_RUN_ID}.dev${GITHUB_RUN_ATTEMPT}"
+        poetry version "$version"
+        echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+        echo "PACKAGE_FILE=tyminator-$version.tar.gz" >> "$GITHUB_ENV"
+
+    - name: Build source distribution
+      run: poetry build -f sdist
+
+    - id: attest
+      name: Attest package artifact
+      uses: actions/attest-build-provenance@v4.1.0
+      with:
+        subject-path: dist/${{ env.PACKAGE_FILE }}
+
+    - name: Upload package artifact
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: tyminator-${{ env.PACKAGE_VERSION }}
+        path: dist/${{ env.PACKAGE_FILE }}
+        if-no-files-found: error
+
+    - id: packagemaze-publish-token
+      name: Get PackageMaze publish token
+      run: maze auth exchange-oidc --feed packagemaze/pypi-smoke-test --purpose publish --package tyminator --format github-output
+
+    - name: Publish package to PackageMaze
+      run: twine upload "dist/${PACKAGE_FILE}"
+      env:
+        TWINE_NON_INTERACTIVE: "1"
+        TWINE_PASSWORD: ${{ steps.packagemaze-publish-token.outputs.token }}
+        TWINE_REPOSITORY_URL: https://pkg.packagemaze.com/packagemaze/pypi-smoke-test/legacy/
+        TWINE_USERNAME: __token__
+
+    - name: Install published package from PackageMaze
+      run: |
+        python -m venv .venv/readback
+        .venv/readback/bin/python -m pip install --upgrade pip
+        .venv/readback/bin/python -m pip install "tyminator==${PACKAGE_VERSION}"
+        .venv/readback/bin/python -c "import tyminator.clock; print('PackageMaze readback ok')"
+      env:
+        PIP_INDEX_URL: https://__token__:${{ steps.packagemaze-install-token.outputs.token }}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/
+
+    - name: Write smoke summary
+      run: |
+        {
+          echo "### PackageMaze PyPI smoke"
+          echo ""
+          echo "- Package: tyminator ${PACKAGE_VERSION}"
+          echo "- Feed: https://pkg.packagemaze.com/packagemaze/pypi-smoke-test"
+          echo "- Artifact: dist/${PACKAGE_FILE}"
+          echo "- Attestation: ${{ steps.attest.outputs.attestation-url }}"
+        } >> "$GITHUB_STEP_SUMMARY"
