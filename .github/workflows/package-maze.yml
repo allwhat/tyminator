@@ -31,7 +31,7 @@ jobs:
       run: maze auth exchange-oidc --feed packagemaze/pypi-smoke-test --purpose install --format github-output
 
     - name: Install build tools from PackageMaze
-      run: python -m pip install poetry==1.8.5 twine==6.1.0
+      run: python -m pip install poetry twine
       env:
         PIP_INDEX_URL: https://__token__:${{ steps.packagemaze-install-token.outputs.token }}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/
 
