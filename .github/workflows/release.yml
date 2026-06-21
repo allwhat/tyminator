@@ -55,8 +55,8 @@ jobs:
       - name: Make sure version matches GITHUB_REF
         run: test "refs/tags/v${{ env.release_version }}" == "$GITHUB_REF"
 
-      - name: Build sdist
-        run: poetry build -f sdist
+      - name: Build distributions
+        run: poetry build
 
       - name: Authorize PackageMaze publish
         id: packagemaze-publish-token
