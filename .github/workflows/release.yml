@@ -17,8 +17,8 @@ jobs:
       contents: read
       attestations: write
     env:
-      PACKAGE_MAZE_PYPI_FEED: ${{ vars.PACKAGE_MAZE_PYPI_FEED }}
-      PACKAGE_MAZE_PYPI_FEED_URL: ${{ vars.PACKAGE_MAZE_PYPI_FEED_URL }}
+      PACKAGE_MAZE_PYPI_FEED: packagemaze/pypi-smoke-test
+      PACKAGE_MAZE_PYPI_FEED_URL: https://pkg.packagemaze.com/packagemaze/pypi-smoke-test
     steps:
       - uses: actions/checkout@v6
 
@@ -26,13 +26,10 @@ jobs:
         with:
           python-version: "3.9"
 
-      - name: Install Poetry
-        run: python -m pip install --upgrade poetry
-
       - name: Check PackageMaze publish configuration
         run: |
           if [ -z "$PACKAGE_MAZE_PYPI_FEED" ] || [ -z "$PACKAGE_MAZE_PYPI_FEED_URL" ]; then
-            printf '%s\n' 'Set PACKAGE_MAZE_PYPI_FEED and PACKAGE_MAZE_PYPI_FEED_URL repository variables before running PackageMaze publish.' >&2
+            printf '%s\n' 'Set PACKAGE_MAZE_PYPI_FEED and PACKAGE_MAZE_PYPI_FEED_URL before running PackageMaze publish.' >&2
             exit 1
           fi
           case "$PACKAGE_MAZE_PYPI_FEED_URL" in
@@ -43,15 +40,27 @@ jobs:
               ;;
           esac
 
-      - uses: packagemaze/setup-maze@v0.0.1
+      - name: Set up my CI to install from PackageMaze
+        id: packagemaze-install-token
+        uses: packagemaze/setup-maze@v0.0.2
+        with:
+          feed: ${{ env.PACKAGE_MAZE_PYPI_FEED }}
+          purpose: install
 
-      - name: Extract name from poetry
-        run: |
-          echo release_name=$(poetry version | grep -o '^[^ ]*') >> $GITHUB_ENV
+      - name: Install Poetry
+        run: python -m pip install --upgrade poetry
+        env:
+          PIP_INDEX_URL: https://__token__:${{ steps.packagemaze-install-token.outputs.token }}@pkg.packagemaze.com/packagemaze/pypi-smoke-test/simple/
 
-      - name: Extract version from poetry
+      - name: Extract package metadata from Poetry
+        id: package-metadata
         run: |
-          echo release_version=$(poetry version -s) >> $GITHUB_ENV
+          release_name="$(poetry version | grep -o '^[^ ]*')"
+          release_version="$(poetry version -s)"
+          echo "release_name=${release_name}" >> "$GITHUB_ENV"
+          echo "release_version=${release_version}" >> "$GITHUB_ENV"
+          echo "package-name=${release_name}" >> "$GITHUB_OUTPUT"
+          echo "package-version=${release_version}" >> "$GITHUB_OUTPUT"
 
       - name: Make sure version matches GITHUB_REF
         run: test "refs/tags/v${{ env.release_version }}" == "$GITHUB_REF"
@@ -66,7 +75,11 @@ jobs:
 
       - name: Authorize PackageMaze publish
         id: packagemaze-publish-token
-        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_PYPI_FEED" --purpose publish --package "$release_name" --format github-output
+        uses: packagemaze/setup-maze@v0.0.2
+        with:
+          feed: ${{ env.PACKAGE_MAZE_PYPI_FEED }}
+          purpose: publish
+          package: ${{ steps.package-metadata.outputs.package-name }}
 
       - name: Publish package to PackageMaze
         run: |
@@ -75,10 +88,6 @@ jobs:
         env:
           POETRY_HTTP_BASIC_PACKAGEMAZE_USERNAME: __token__
           POETRY_HTTP_BASIC_PACKAGEMAZE_PASSWORD: ${{ steps.packagemaze-publish-token.outputs.token }}
-
-      - name: Authorize PackageMaze install verification
-        id: packagemaze-install-token
-        run: maze auth exchange-oidc --feed "$PACKAGE_MAZE_PYPI_FEED" --purpose install --format github-output
 
       - name: Verify PackageMaze package installs
         run: |
